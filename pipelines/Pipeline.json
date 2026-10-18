@@ -1,0 +1,369 @@
+{
+    "name": "Movies",
+    "properties": {
+        "activities": [
+            {
+                "name": "PuliziaPreliminare",
+                "type": "ExecuteWranglingDataflow",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "dataflow": {
+                        "referenceName": "powerquery1",
+                        "type": "DataFlowReference"
+                    },
+                    "compute": {
+                        "coreCount": 8,
+                        "computeType": "General"
+                    },
+                    "queries": [
+                        {
+                            "queryName": "UserQuery",
+                            "dataflowSinks": [
+                                {
+                                    "name": "MoviesWrangled",
+                                    "dataset": {
+                                        "referenceName": "SinkWrangling",
+                                        "type": "DatasetReference"
+                                    },
+                                    "script": "sink(allowSchemaDrift: true,\n\tvalidateSchema: false,\n\tinput(\n\t\tmovies as string,\n\t\tTitle as string,\n\t\tGenre as string,\n\t\tRating as string,\n\t\tYear as string\n\t),\n\tpartitionFileNames:['MoviesWrangled.csv'],\n\tskipDuplicateMapInputs: true,\n\tskipDuplicateMapOutputs: true,\n\tpartitionBy('hash', 1)) ~> MoviesWrangled"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "TraduzioneCampi",
+                "description": "",
+                "type": "WebActivity",
+                "dependsOn": [
+                    {
+                        "activity": "OttieniKey",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    },
+                    {
+                        "activity": "ForEach1",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": true
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "method": "POST",
+                    "headers": {
+                        "Ocp-Apim-Subscription-Key": {
+                            "value": "@activity('OttieniKey').output.value",
+                            "type": "Expression"
+                        },
+                        "Ocp-Apim-Subscription-Region": "global"
+                    },
+                    "url": "https://api.cognitive.microsofttranslator.com/translate?to=it&api-version=3.0",
+                    "body": {
+                        "value": "@json(concat('[{\"Text\": \"', join(variables('IntestazioniInglese'), ','), '\"}]'))",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "OttieniKey",
+                "type": "WebActivity",
+                "dependsOn": [
+                    {
+                        "activity": "EstraiIntestazioni",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": true,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "method": "GET",
+                    "url": "https://vaultfilm.vault.azure.net/secrets/KeyTraduttore/93904d108b014bdc84368f6a52a8836c?api-version=7.5",
+                    "authentication": {
+                        "type": "MSI",
+                        "resource": "https://vault.azure.net"
+                    }
+                }
+            },
+            {
+                "name": "EstraiIntestazioni",
+                "type": "GetMetadata",
+                "dependsOn": [
+                    {
+                        "activity": "PuliziaPreliminare",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "dataset": {
+                        "referenceName": "SinkWrangling",
+                        "type": "DatasetReference"
+                    },
+                    "fieldList": [
+                        "structure"
+                    ],
+                    "storeSettings": {
+                        "type": "AzureBlobStorageReadSettings",
+                        "recursive": true,
+                        "enablePartitionDiscovery": false
+                    },
+                    "formatSettings": {
+                        "type": "DelimitedTextReadSettings"
+                    }
+                }
+            },
+            {
+                "name": "ForEach1",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "EstraiIntestazioni",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('EstraiIntestazioni').output.structure",
+                        "type": "Expression"
+                    },
+                    "isSequential": true,
+                    "activities": [
+                        {
+                            "name": "AppendIntestazioni",
+                            "type": "AppendVariable",
+                            "dependsOn": [],
+                            "userProperties": [],
+                            "typeProperties": {
+                                "variableName": "IntestazioniInglese",
+                                "value": {
+                                    "value": "@item().name",
+                                    "type": "Expression"
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "Data flow1",
+                "type": "ExecuteDataFlow",
+                "dependsOn": [
+                    {
+                        "activity": "TraduzioneCampi",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "dataflow": {
+                        "referenceName": "dataflow1",
+                        "type": "DataFlowReference",
+                        "parameters": {
+                            "ColonneItaliano": {
+                                "value": "@variables('ArrayIntestazioniItaliano')",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    "compute": {
+                        "coreCount": 8,
+                        "computeType": "General"
+                    },
+                    "traceLevel": "Fine"
+                }
+            },
+            {
+                "name": "Set variable1",
+                "type": "SetVariable",
+                "dependsOn": [
+                    {
+                        "activity": "TraduzioneCampi",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "variableName": "ArrayIntestazioniItaliano",
+                    "value": {
+                        "value": "@split(json(activity('TraduzioneCampi').output.Response)[0].translations[0].text,',')",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "Set variable2",
+                "type": "SetVariable",
+                "dependsOn": [
+                    {
+                        "activity": "ForEach1",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "variableName": "ArrayIntestazioni",
+                    "value": {
+                        "value": "@variables('IntestazioniInglese')",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "CopiaInOutput",
+                "description": "Copia nel blob di output",
+                "type": "Copy",
+                "dependsOn": [
+                    {
+                        "activity": "Data flow1",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "DelimitedTextSource",
+                        "storeSettings": {
+                            "type": "AzureBlobStorageReadSettings",
+                            "recursive": true,
+                            "enablePartitionDiscovery": false
+                        },
+                        "formatSettings": {
+                            "type": "DelimitedTextReadSettings"
+                        }
+                    },
+                    "sink": {
+                        "type": "DelimitedTextSink",
+                        "storeSettings": {
+                            "type": "AzureBlobStorageWriteSettings",
+                            "metadata": [
+                                {
+                                    "name": "IntestazioniInItaliano",
+                                    "value": {
+                                        "value": "@string(variables('ArrayIntestazioniItaliano'))",
+                                        "type": "Expression"
+                                    }
+                                },
+                                {
+                                    "name": "IntestazioniInInglese",
+                                    "value": {
+                                        "value": "@string(variables('IntestazioniInglese'))",
+                                        "type": "Expression"
+                                    }
+                                }
+                            ]
+                        },
+                        "formatSettings": {
+                            "type": "DelimitedTextWriteSettings",
+                            "quoteAllText": true,
+                            "fileExtension": ".txt"
+                        }
+                    },
+                    "enableStaging": false,
+                    "parallelCopies": 2,
+                    "translator": {
+                        "type": "TabularTranslator",
+                        "typeConversion": true,
+                        "typeConversionSettings": {
+                            "allowDataTruncation": true,
+                            "treatBooleanAsNumber": false
+                        }
+                    }
+                },
+                "inputs": [
+                    {
+                        "referenceName": "MoviesFiltered",
+                        "type": "DatasetReference"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "referenceName": "MoviesOutput",
+                        "type": "DatasetReference"
+                    }
+                ]
+            }
+        ],
+        "variables": {
+            "IntestazioniInglese": {
+                "type": "Array"
+            },
+            "ArrayIntestazioniItaliano": {
+                "type": "Array"
+            },
+            "ArrayIntestazioni": {
+                "type": "Array"
+            }
+        },
+        "annotations": [],
+        "lastPublishTime": "2026-07-30T15:36:22Z"
+    },
+    "type": "Microsoft.DataFactory/factories/pipelines"
+}
